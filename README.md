@@ -80,6 +80,53 @@ DISCORD_TOKEN=your_bot_token_here
 OWNER_ID=your_discord_user_id
 ```
 
+### Run with Docker (no server needed)
+
+Build and run the bot locally with Docker:
+
+```bash
+# Build the image
+docker build -t picrust -f PiCrust/Dockerfile PiCrust
+
+# Create a persistent data directory
+mkdir -p ~/picrust-data
+
+# Run the container
+docker run -d \
+  --name picrust \
+  -e DISCORD_TOKEN=your_bot_token_here \
+  -e MINIMAX_API_KEY=your_api_key_here \
+  -e OWNER_ID=your_discord_user_id \
+  -v ~/picrust-data:/home/picrust \
+  picrust
+```
+
+Manage the running bot:
+
+```bash
+# View logs
+docker logs -f picrust
+
+# Shell into the container
+docker exec -it picrust bash
+
+# Stop
+docker stop picrust
+
+# Restart
+docker start picrust
+
+# Update (rebuild and replace)
+docker stop picrust && docker rm picrust
+docker build -t picrust -f PiCrust/Dockerfile PiCrust
+docker run -d --name picrust \
+  -e DISCORD_TOKEN=your_bot_token_here \
+  -e MINIMAX_API_KEY=your_api_key_here \
+  -e OWNER_ID=your_discord_user_id \
+  -v ~/picrust-data:/home/picrust \
+  picrust
+```
+
 ### Deploy to Production
 
 ```bash
