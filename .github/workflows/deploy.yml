@@ -42,4 +42,6 @@ jobs:
             ${{ secrets.KAMAL_SSH_PRIVATE_KEY }}
 
       - name: Deploy with Kamal
-        run: kamal deploy
+        run: |
+          kamal app stop
+          kamal deploy
