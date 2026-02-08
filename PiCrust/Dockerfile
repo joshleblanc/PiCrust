@@ -22,8 +22,6 @@ ENV HOME=/home/picrust
 EXPOSE 8080
 EXPOSE 8081
 
-USER picrust
-
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIG=Release
 WORKDIR /src
