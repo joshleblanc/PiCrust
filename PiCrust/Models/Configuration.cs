@@ -1,4 +1,4 @@
-namespace PiShell.Models
+namespace PiCrust.Models
 {
     public class Configuration
     {

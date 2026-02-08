@@ -2,14 +2,14 @@
   "profiles": {
     "Container (Dockerfile)": {
       "commandName": "Docker",
-      "containerRunEnvironmentFiles": "PiShell\\.env",
+      "containerRunEnvironmentFiles": "PiCrust\\.env",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
-    "PiShell (Process - Local)": {
+    "PiCrust (Process - Local)": {
       "commandName": "Project",
-      "workingDirectory": "C:\\source\\pi-shell\\PiShell"
+      "workingDirectory": "C:\\source\\pi-shell\\PiCrust"
     },
     "WSL": {
       "commandName": "WSL2",

@@ -5,10 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
-using PiShell.Models;
-using PiShell.Services;
+using PiCrust.Models;
+using PiCrust.Services;
 
-namespace PiShell;
+namespace PiCrust;
 
 /// <summary>
 /// Docker Personal Assistant - Discord Interface for pi

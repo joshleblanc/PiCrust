@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace PiShell.Services;
+namespace PiCrust.Services;
 
 /// <summary>
 /// Background service that manages the pi subprocess.

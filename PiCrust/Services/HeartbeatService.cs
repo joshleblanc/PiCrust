@@ -2,11 +2,11 @@ using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using PiShell.Models;
+using PiCrust.Models;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace PiShell.Services;
+namespace PiCrust.Services;
 
 /// <summary>
 /// Background service that runs heartbeat prompts on a schedule.
@@ -261,8 +261,8 @@ public class HeartbeatService(
 
     private string GetHeartbeatPrompt()
     {
-        // Use PI_CODING_AGENT_DIR env var, defaults to /home/pishell in Docker
-        var agentDir = config.PiCodingAgentDir ?? "/home/pishell";
+        // Use PI_CODING_AGENT_DIR env var, defaults to /home/picrust in Docker
+        var agentDir = config.PiCodingAgentDir ?? "/home/picrust";
         var heartbeatPath = Path.Combine(agentDir, "HEARTBEAT.md");
 
         // Try to load custom heartbeat prompt

@@ -1,7 +1,7 @@
 # Kamal deployment configuration
 # See https://kamal-deploy.org/docs/configuration/
 
-service: pishell 
+service: picrust 
 
 # Primary server (proxy disabled — this is a Discord bot, not a web app)
 servers:
@@ -20,19 +20,19 @@ env:
     - DISCORD_TOKEN
     - OWNER_ID
   clear:
-    PI_CODING_AGENT_DIR: /home/pishell
+    PI_CODING_AGENT_DIR: /home/picrust
     ASPNETCORE_ENVIRONMENT: Production
 
 builder:
-  context: PiShell
-  dockerfile: PiShell/Dockerfile
+  context: PiCrust
+  dockerfile: PiCrust/Dockerfile
   arch:
     - amd64  
 
 aliases:
   shell: app exec --interactive --reuse "bash"
   logs: app logs -f
-  agent-files: app exec --interactive --reuse "ls -la /home/pishell/"
+  agent-files: app exec --interactive --reuse "ls -la /home/picrust/"
 
 # Build args passed to docker buildx build
 # build_args:
@@ -53,4 +53,4 @@ aliases:
 
 # Persistent data volumes (Docker volumes)
 volumes:
-  - pishell-data:/home/pishell
+  - picrust-data:/home/picrust

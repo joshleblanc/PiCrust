@@ -11,18 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and grant access to /app
-RUN useradd -m pishell \
-    && chown -R pishell:pishell /app
+RUN useradd -m picrust \
+    && chown -R picrust:picrust /app
 
-# Copy agent config files into pishell's home (available during debug and production)
-COPY --chown=pishell:pishell AgentFiles/ /home/pishell/
+# Copy agent config files into picrust's home (available during debug and production)
+COPY --chown=picrust:picrust AgentFiles/ /home/picrust/
 
-ENV HOME=/home/pishell
+ENV HOME=/home/picrust
 
 EXPOSE 8080
 EXPOSE 8081
 
-USER pishell
+USER picrust
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIG=Release
@@ -48,6 +48,6 @@ COPY --from=publish /app/publish .
 
 # Environment variables
 ENV DOTNET_RUNNING_IN_CONTAINER=true
-ENV PI_CODING_AGENT_DIR=/home/pishell
+ENV PI_CODING_AGENT_DIR=/home/picrust
 
-ENTRYPOINT ["dotnet", "PiShell.dll"]
+ENTRYPOINT ["dotnet", "PiCrust.dll"]
