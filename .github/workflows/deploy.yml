@@ -8,6 +8,7 @@ env:
   MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
   OWNER_ID: ${{ secrets.OWNER_ID }}
   DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
 
 jobs:
   # Run tests before deployment (unless skipped)

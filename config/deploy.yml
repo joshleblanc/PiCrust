@@ -7,7 +7,7 @@ service: pishell
 servers:
   web:
     hosts:
-      - 137.184.164.224
+      - <%= ENV["DEPLOY_HOST"] %>
     proxy: false
 
 # Docker registry authentication
