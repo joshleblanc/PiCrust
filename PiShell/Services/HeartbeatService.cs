@@ -12,14 +12,14 @@ namespace PiShell.Services;
 /// Background service that runs heartbeat prompts on a schedule.
 /// Keeps the assistant active and summarizes progress periodically.
 /// </summary>
-public class HeartbeatScheduler(
-    PiClient piClient,
+public class HeartbeatService(
+    PiService piClient,
     DiscordService discordService,
-    ILogger<HeartbeatScheduler> logger,
+    ILogger<HeartbeatService> logger,
     Configuration config) : BackgroundService
 {
-    private readonly PiClient _piClient = piClient;
-    private readonly ILogger<HeartbeatScheduler> _logger = logger;
+    private readonly PiService _piClient = piClient;
+    private readonly ILogger<HeartbeatService> _logger = logger;
     private readonly int _intervalMinutes = config.HeartbeatIntervalMinutes;
 
     // Response buffer for heartbeat

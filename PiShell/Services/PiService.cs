@@ -12,12 +12,12 @@ namespace PiShell.Services;
 /// Background service that manages the pi subprocess.
 /// Automatically starts on application start and stops on shutdown.
 /// </summary>
-public class PiClient(
-    ILogger<PiClient> logger,
+public class PiService(
+    ILogger<PiService> logger,
     IHostApplicationLifetime lifetime,
     WorkingDirectoryOptions workingDirOptions) : BackgroundService
 {
-    private readonly ILogger<PiClient> _logger = logger;
+    private readonly ILogger<PiService> _logger = logger;
     private readonly IHostApplicationLifetime _lifetime = lifetime;
     private readonly string _workingDirectory = workingDirOptions.Directory;
 

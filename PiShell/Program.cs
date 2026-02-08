@@ -63,15 +63,15 @@ public class Program
                 // Working directory
                 services.AddSingleton(new WorkingDirectoryOptions { Directory = workingDir });
 
-                services.AddSingleton<PiClient>(sp =>
+                services.AddSingleton<PiService>(sp =>
                 {
-                    var logger = sp.GetRequiredService<ILogger<PiClient>>();
+                    var logger = sp.GetRequiredService<ILogger<PiService>>();
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
                     var workingDirOptions = sp.GetRequiredService<WorkingDirectoryOptions>();
-                    return new PiClient(logger, lifetime, workingDirOptions);
+                    return new PiService(logger, lifetime, workingDirOptions);
                 });
                 // Pi client (hosted service - starts/stops with the application)
-                services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PiClient>());
+                services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PiService>());
 
                 // Discord socket client (singleton, needs persistent connection)
                 services.AddSingleton(sp =>
@@ -87,7 +87,7 @@ public class Program
                 services.AddSingleton<DiscordService>(sp =>
                 {
                     var discordSocketClient = sp.GetRequiredService<DiscordSocketClient>();
-                    var piClient = sp.GetRequiredService<PiClient>();
+                    var piClient = sp.GetRequiredService<PiService>();
                     var logger = sp.GetRequiredService<ILogger<DiscordService>>();
                     var config = sp.GetRequiredService<Configuration>();
 
@@ -97,7 +97,7 @@ public class Program
                 services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<DiscordService>());
 
                 // Background services - receive singletons via constructor injection
-                services.AddHostedService<HeartbeatScheduler>();
+                services.AddHostedService<HeartbeatService>();
             })
             .ConfigureLogging(logging =>
             {

@@ -14,12 +14,12 @@ namespace PiShell.Services;
 /// </summary>
 public class DiscordService(
     DiscordSocketClient client,
-    PiClient piClient,
+    PiService piClient,
     ILogger<DiscordService> logger,
     Configuration config) : BackgroundService
 {
     private readonly DiscordSocketClient _client = client;
-    private readonly PiClient _piClient = piClient;
+    private readonly PiService _piClient = piClient;
     private readonly ILogger<DiscordService> _logger = logger;
 
     // Track pending requests: message ID -> channel/response info
