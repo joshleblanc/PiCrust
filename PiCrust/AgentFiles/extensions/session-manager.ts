@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   // Register the /new command
-  pi.registerCommand("new", {
+  pi.registerCommand("new_compat", {
     description: "Create a new session",
     handler: async (args, ctx) => {
       const result = await ctx.newSession();

@@ -9,6 +9,7 @@
  * Install: Copy to ~/.pi/agent/extensions/ or include in a pi package
  */
 
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -52,7 +53,6 @@ ${messages.slice(-10).map(m => `[${m.role}]: ${m.content?.slice(0, 200)}...`).jo
                 await updateMemoryFile(lastSessionSummary);
             }
         } catch (error) {
-            pi.log(`Failed to generate memory summary: ${error}`);
         }
     });
     
@@ -107,9 +107,7 @@ ${messages.slice(-10).map(m => `[${m.role}]: ${m.content?.slice(0, 200)}...`).jo
                 content: updatedContent
             });
             
-            pi.log("Updated MEMORY.md with session summary");
         } catch (error) {
-            pi.log(`Failed to update MEMORY.md: ${error}`);
         }
     }
     
@@ -160,5 +158,4 @@ This file contains persistent context that survives across pi restarts and sessi
         }
     });
     
-    pi.log("Auto-memory extension loaded");
 }

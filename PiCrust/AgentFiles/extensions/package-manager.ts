@@ -47,14 +47,11 @@ export default function (pi: ExtensionAPI) {
 
                 if (output.toLowerCase().includes("error")) {
                     ctx.ui.notify(`Install failed — check logs`, "error");
-                    pi.log(`[package-manager] install error:\n${output}`);
                 } else {
                     ctx.ui.notify(`Installed ${source}`, "success");
-                    pi.log(`[package-manager] installed: ${source}\n${output}`);
                 }
             } catch (error) {
                 ctx.ui.notify(`Install failed: ${error}`, "error");
-                pi.log(`[package-manager] install exception: ${error}`);
             }
         },
     });
@@ -80,14 +77,11 @@ export default function (pi: ExtensionAPI) {
 
                 if (output.toLowerCase().includes("error")) {
                     ctx.ui.notify(`Remove failed — check logs`, "error");
-                    pi.log(`[package-manager] remove error:\n${output}`);
                 } else {
                     ctx.ui.notify(`Removed ${source}`, "success");
-                    pi.log(`[package-manager] removed: ${source}\n${output}`);
                 }
             } catch (error) {
                 ctx.ui.notify(`Remove failed: ${error}`, "error");
-                pi.log(`[package-manager] remove exception: ${error}`);
             }
         },
     });
@@ -107,7 +101,6 @@ export default function (pi: ExtensionAPI) {
                     ctx.ui.notify("No packages installed yet.", "info");
                 } else {
                     ctx.ui.notify(output.trim(), "info");
-                    pi.log(`[package-manager] list:\n${output}`);
                 }
             } catch (error) {
                 ctx.ui.notify(`Failed to list packages: ${error}`, "error");
@@ -130,19 +123,15 @@ export default function (pi: ExtensionAPI) {
 
                 if (output.toLowerCase().includes("error")) {
                     ctx.ui.notify(`Update failed — check logs`, "error");
-                    pi.log(`[package-manager] update error:\n${output}`);
                 } else {
                     ctx.ui.notify("Packages updated", "success");
-                    pi.log(`[package-manager] update:\n${output}`);
                 }
             } catch (error) {
                 ctx.ui.notify(`Update failed: ${error}`, "error");
-                pi.log(`[package-manager] update exception: ${error}`);
             }
         },
     });
 
-    pi.log("Package manager extension loaded");
 }
 
 /** Validate that the source looks like a valid pi package specifier. */

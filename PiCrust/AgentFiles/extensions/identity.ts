@@ -7,6 +7,9 @@
  * Install: Copy to ~/.pi/agent/extensions/ or include in a pi package
  */
 
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+
 export default function (pi: ExtensionAPI) {
     const IDENTITY_PATH = "IDENTITY.md";
 
@@ -20,14 +23,12 @@ export default function (pi: ExtensionAPI) {
             const identityContent = readResult.content?.[0]?.text;
             if (identityContent && identityContent.trim().length > 0) {
                 // Log that identity was loaded (for debugging)
-                pi.log("Loaded identity from IDENTITY.md");
 
                 // The identity will be used by other extensions or via MEMORY.md
                 // We can also make it available via a tool
             }
         } catch (error) {
             // IDENTITY.md doesn't exist yet - that's okay
-            pi.log("No IDENTITY.md found - identity will develop naturally");
         }
     });
 
@@ -65,8 +66,6 @@ export default function (pi: ExtensionAPI) {
             return { content: [], details: {} };
         }
     });
-
-    pi.log("Identity extension loaded");
 }
 
 function getIdentityTemplate(): string {
