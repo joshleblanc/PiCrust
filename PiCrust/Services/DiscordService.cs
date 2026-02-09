@@ -34,6 +34,9 @@ public class DiscordService(
     // Event that other services can subscribe to for channel tracking
     public event Action<ISocketMessageChannel>? OnChannelUsed;
 
+    private IDisposable? _typing;
+    
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Discord service starting...");
@@ -96,8 +99,8 @@ public class DiscordService(
             Channel = message.Channel,
             OriginalMessage = userMessage,
             StartedAt = DateTime.UtcNow,
-            Typing = message.Channel.EnterTypingState()
         };
+        _typing ??= message.Channel.EnterTypingState();
         _pendingRequests[message.Id] = pendingRequest;
         _responseBuffers[message.Id] = new StringBuilder();
 
@@ -215,6 +218,8 @@ public class DiscordService(
         // Find the oldest pending request
         if (!_pendingRequests.Any())
         {
+            _typing?.Dispose();
+            _typing = null;
             _logger.LogDebug("No pending requests, ignoring agent_end");
             return;
         }
@@ -222,8 +227,6 @@ public class DiscordService(
         var oldestRequest = _pendingRequests.OrderBy(kvp => kvp.Value.StartedAt).First();
         var requestId = oldestRequest.Key;
         var pendingRequest = oldestRequest.Value;
-
-        pendingRequest.Typing.Dispose();
 
         // Get the final response text
         var messages = data["messages"]?.AsArray();

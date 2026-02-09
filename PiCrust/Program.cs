@@ -103,7 +103,17 @@ public class Program
             {
                 logging.ClearProviders();
                 logging.AddConsole();
-                logging.SetMinimumLevel(LogLevel.Information);
+
+                // Enable debug logs in dev - override with LOG_LEVEL env var if needed
+                var logLevel = Environment.GetEnvironmentVariable("LOG_LEVEL");
+                logging.SetMinimumLevel(
+                    logLevel?.ToLowerInvariant() switch
+                    {
+                        "debug" => LogLevel.Debug,
+                        "trace" => LogLevel.Trace,
+                        _ => LogLevel.Information
+                    }
+                );
             })
             .ConfigureAppConfiguration(config =>
             {

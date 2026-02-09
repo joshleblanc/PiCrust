@@ -9,7 +9,6 @@
  *   uninstall_package   — remove a pi package
  *   list_packages       — list installed pi packages
  *   update_packages     — update installed packages
- *   reload_runtime      — reload extensions after package changes
  *
  * Source formats:
  *   npm:@scope/name      — from npm registry
@@ -154,32 +153,6 @@ export default function (pi: ExtensionAPI) {
             return {
                 content: [{ type: "text", text: output.trim() || "Packages updated" }],
                 details: { success: true, output },
-            };
-        },
-    });
-
-    pi.registerCommand("reload-runtime", {
-        description: "Reload extensions, skills, prompts, and themes",
-        handler: async (_args, ctx) => {
-            await ctx.reload();
-            await ctx.reload();
-            return;
-        },
-    });
-
-    // Tool: reload_runtime
-    pi.registerTool({
-        name: "reload_runtime",
-        label: "Reload Runtime",
-        description: "Reload extensions, skills, prompts, and themes. Call this after installing/removing packages.",
-        parameters: Type.Object({}),
-        async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-            // Queue reload as a follow-up command since tools can't call ctx.reload() directly
-            pi.sendUserMessage("/reload-runtime", { deliverAs: "followUp" });
-
-            return {
-                content: [{ type: "text", text: "Queued /reload-runtime as a follow-up command. Extensions will be reloaded after the agent finishes." }],
-                details: {},
             };
         },
     });

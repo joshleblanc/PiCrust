@@ -174,6 +174,7 @@ public class PiService(
             {
                 try
                 {
+                    _logger.LogDebug(line);
                     var node = JsonNode.Parse(line);
                     if (node == null) continue;
 
