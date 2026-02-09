@@ -162,6 +162,7 @@ export default function (pi: ExtensionAPI) {
         description: "Reload extensions, skills, prompts, and themes",
         handler: async (_args, ctx) => {
             await ctx.reload();
+            await ctx.reload();
             return;
         },
     });
