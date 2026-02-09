@@ -6,10 +6,11 @@ RUN echo "deb https://archive.ubuntu.com/ubuntu noble main restricted universe m
     echo "deb https://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
     echo "deb https://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse" >> /etc/apt/sources.list
 
-# Install Node.js 20 from NodeSource and pi
+# Install Node.js 20 from NodeSource, git, and pi
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    git \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @mariozechner/pi-coding-agent \
