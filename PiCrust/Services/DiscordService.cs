@@ -300,20 +300,27 @@ public class DiscordService(
         {
             _reloadNeeded = false;
             _logger.LogInformation("Package operation detected, triggering runtime reload");
-            try
-            {
-                await _piClient.RestartAsync();
 
-                // Notify the last used channel that the reload completed
-                if (_lastChannel != null)
-                {
-                    await _lastChannel.SendMessageAsync("Runtime reloaded. Extensions are up to date.");
-                }
-            }
-            catch (Exception ex)
+            // Fire restart on a separate thread — we can't await it here because
+            // this code runs inside the event listener, and RestartAsync needs
+            // the listener to exit first (otherwise it deadlocks).
+            var channel = _lastChannel;
+            _ = Task.Run(async () =>
             {
-                _logger.LogWarning(ex, "Failed to trigger runtime reload");
-            }
+                try
+                {
+                    await _piClient.RestartAsync();
+
+                    if (channel != null)
+                    {
+                        await channel.SendMessageAsync("Runtime reloaded. Extensions are up to date.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to trigger runtime reload");
+                }
+            });
         }
 
         // Always stop the typing indicator when the agent finishes

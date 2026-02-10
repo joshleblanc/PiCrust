@@ -73,6 +73,9 @@ export default function (pi: ExtensionAPI) {
     // This helps us track across restarts
     lastSessionDate = getTodayDate();
 
+    // Start the periodic midnight checker (safe now that runtime is initialized)
+    startMidnightChecker();
+
     // Check if we need to create a midnight session
     // This handles the case where pi was restarted after midnight
     if (checkMidnight()) {
@@ -82,21 +85,18 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Start the midnight checker - runs every minute
-  async function startMidnightChecker() {
+  function startMidnightChecker() {
+    // Clear any existing interval (e.g. on reload)
+    if (checkInterval) {
+      clearInterval(checkInterval);
+    }
+
     checkInterval = setInterval(async () => {
       if (checkMidnight()) {
         await createMidnightSession();
       }
     }, 60 * 1000); // Check every minute
-
-    // Initial check on startup
-    if (checkMidnight()) {
-      await createMidnightSession();
-    }
   }
-
-  // Start the checker when the extension loads
-  startMidnightChecker();
 
   // Cleanup on shutdown
   pi.on("session_shutdown", () => {

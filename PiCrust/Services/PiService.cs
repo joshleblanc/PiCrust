@@ -31,6 +31,7 @@ public class PiService(
     private string? _piPath;
     private string? _resolvedWorkingDir;
     private Task? _listenerTask;
+    private TaskCompletionSource _readyGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public event Func<PiEvent, Task>? OnEvent;
     public event Func<string, Task>? OnLog;
@@ -129,23 +130,24 @@ public class PiService(
         await Task.Delay(500);
 
         _logger.LogInformation("pi started successfully");
+
+        // Signal that the process is ready to accept commands
+        _readyGate.TrySetResult();
     }
 
     private async Task StopPiProcessAsync()
     {
         _logger.LogInformation("Stopping pi process...");
 
-        _processCts?.Cancel();
+        // Block new commands while restarting
+        _readyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Wait for the event listener to finish before disposing streams
-        if (_listenerTask != null)
-        {
-            try { await _listenerTask; } catch { /* listener handles its own exceptions */ }
-            _listenerTask = null;
-        }
+        _processCts?.Cancel();
 
         try
         {
+            // Close stdin and kill the process first — this causes stdout to EOF,
+            // which unblocks ListenForEventsAsync's ReadLineAsync call.
             _stdin?.Close();
 
             if (_process != null && !_process.HasExited)
@@ -165,6 +167,17 @@ public class PiService(
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error stopping pi process");
+        }
+
+        // Wait briefly for the listener to notice the process is gone
+        if (_listenerTask != null)
+        {
+            var completed = await Task.WhenAny(_listenerTask, Task.Delay(3000)) == _listenerTask;
+            if (!completed)
+            {
+                _logger.LogWarning("Event listener did not exit promptly, proceeding with cleanup");
+            }
+            _listenerTask = null;
         }
 
         _process?.Dispose();
@@ -338,20 +351,27 @@ public class PiService(
         return SendCommandAsync(cmd);
     }
 
-    private Task SendCommandAsync(object command)
+    private async Task SendCommandAsync(object command)
     {
+        // Wait for the process to be ready (blocks during restart)
+        await _readyGate.Task;
+
         if (_stdin == null)
         {
             _logger.LogError("pi stdin not available");
-            return Task.CompletedTask;
+            return;
         }
 
         var json = JsonSerializer.Serialize(command);
-        return _stdin.WriteLineAsync(json).ContinueWith((_,_) => _stdin.FlushAsync(), null, TaskContinuationOptions.OnlyOnRanToCompletion).Unwrap();
+        await _stdin.WriteLineAsync(json);
+        await _stdin.FlushAsync();
     }
 
     private async Task<JsonNode> SendCommandWithResponseAsync(object command)
     {
+        // Wait for the process to be ready (blocks during restart)
+        await _readyGate.Task;
+
         if (_stdin == null)
         {
             throw new InvalidOperationException("pi stdin not available");
