@@ -249,6 +249,19 @@ public class DiscordService(
 
             if (messages != null)
             {
+                // First, process any custom messages (like discord_reaction)
+                foreach (var message in messages)
+                {
+                    if (message == null) continue;
+                    
+                    var customType = message["customType"]?.GetValue<string>();
+                    if (customType == "discord_reaction")
+                    {
+                        await ProcessDiscordReactionMessageAsync(message, pendingRequest);
+                    }
+                }
+
+                // Then extract text from the assistant message
                 var assistantMessage = messages.LastOrDefault(m =>
                     m?["role"]?.GetValue<string>() == "assistant");
 
@@ -326,6 +339,45 @@ public class DiscordService(
         // Always stop the typing indicator when the agent finishes
         _typing?.Dispose();
         _typing = null;
+    }
+
+    private async Task ProcessDiscordReactionMessageAsync(JsonNode message, PendingRequest pendingRequest)
+    {
+        try
+        {
+            var content = message["content"]?.GetValue<string>();
+            if (string.IsNullOrEmpty(content))
+            {
+                _logger.LogDebug("Discord reaction message has no content");
+                return;
+            }
+
+            var reactionData = JsonNode.Parse(content);
+            if (reactionData == null)
+            {
+                _logger.LogDebug("Failed to parse Discord reaction data");
+                return;
+            }
+
+            var emoji = reactionData["emoji"]?.GetValue<string>();
+
+
+            // Add reaction to the original message
+            if (pendingRequest.OriginalMessage != null)
+            {
+                var emote = new Emoji(emoji);
+                await pendingRequest.OriginalMessage.AddReactionAsync(emote);
+                _logger.LogInformation("Added reaction {Emoji} to message {MessageId}", emoji, pendingRequest.OriginalMessage.Id);
+            }
+            else
+            {
+                _logger.LogDebug("No original message available for reaction");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process Discord reaction message");
+        }
     }
 
     private async Task SendResponseToDiscordAsync(PendingRequest request, string response)

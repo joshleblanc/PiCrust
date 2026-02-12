@@ -60,6 +60,7 @@
     <None Include="AgentFiles\AGENTS.md" />
     <None Include="AgentFiles\BOOTSTRAP.md" />
     <None Include="AgentFiles\extensions\auto-memory.ts" />
+    <None Include="AgentFiles\extensions\discord-reactions.ts" />
     <None Include="AgentFiles\extensions\package-manager.ts" />
     <None Include="agentfiles\extensions\picrust.ts" />
     <None Include="AgentFiles\extensions\reload-runtime.ts" />
@@ -75,7 +76,6 @@
     <None Include="AgentFiles\SOUL.md" />
     <None Include="AgentFiles\TOOLS.md" />
     <None Include="AgentFiles\USER.md" />
-    <None Include="AgentFiles\extensions\session-manager.ts" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="AgentFiles\memories\" />
