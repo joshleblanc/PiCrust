@@ -1,0 +1,26 @@
+{
+  "providers": {
+    "minimax": {
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "apiKey": "MINIMAX_API_KEY",
+      "api": "anthropic-messages",
+      "models": [
+        {
+          "id": "MiniMax-M2.5",
+          "name": "MiniMax M2.5",
+          "description": "A minimax model for testing purposes.",
+          "reasoning": true,
+          "input": [ "text" ],
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 204608,
+          "maxToken": 131100
+        }
+      ]
+    }
+  }
+}
