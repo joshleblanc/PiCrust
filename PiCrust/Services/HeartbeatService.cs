@@ -217,6 +217,44 @@ public class HeartbeatService(
 
             _logger.LogDebug("Heartbeat response received: {Length} chars", response.Length);
 
+            // OpenClaw-style filtering: check for HEARTBEAT_OK
+            var trimmedResponse = response.Trim();
+            
+            // Check if the response is exactly HEARTBEAT_OK or starts/ends with it
+            // and the remaining content is short (ackMaxChars: 300 chars)
+            const int ackMaxChars = 300;
+            var isHeartbeatOk = trimmedResponse.Equals("HEARTBEAT_OK", StringComparison.OrdinalIgnoreCase);
+            
+            if (isHeartbeatOk)
+            {
+                _logger.LogDebug("Heartbeat check complete - nothing needs attention, skipping delivery");
+                return;
+            }
+            
+            // Check if response starts with HEARTBEAT_OK and the rest is short
+            if (trimmedResponse.StartsWith("HEARTBEAT_OK", StringComparison.OrdinalIgnoreCase))
+            {
+                var contentAfterAck = trimmedResponse["HEARTBEAT_OK".Length..].Trim();
+                if (string.IsNullOrEmpty(contentAfterAck) || contentAfterAck.Length <= ackMaxChars)
+                {
+                    _logger.LogDebug("Heartbeat check complete - HEARTBEAT_OK with minimal content, skipping delivery");
+                    return;
+                }
+                // Use content after HEARTBEAT_OK as the actual response
+                response = contentAfterAck;
+            }
+            else if (trimmedResponse.EndsWith("HEARTBEAT_OK", StringComparison.OrdinalIgnoreCase))
+            {
+                var contentBeforeAck = trimmedResponse[..^"HEARTBEAT_OK".Length].Trim();
+                if (string.IsNullOrEmpty(contentBeforeAck) || contentBeforeAck.Length <= ackMaxChars)
+                {
+                    _logger.LogDebug("Heartbeat check complete - HEARTBEAT_OK at end with minimal content, skipping delivery");
+                    return;
+                }
+                // Use content before HEARTBEAT_OK as the actual response
+                response = contentBeforeAck;
+            }
+
             // Send response to the tracked heartbeat channel
             if (_heartbeatChannel != null)
             {
