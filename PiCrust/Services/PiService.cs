@@ -347,7 +347,8 @@ public class PiService(
         {
             type = "prompt",
             message,
-            images = images?.Select(i => new { type = "image", data = i.Data, mimeType = i.MimeType }).ToArray()
+            images = images?.Select(i => new { type = "image", data = i.Data, mimeType = i.MimeType }).ToArray(),
+            streamingBehavior = "steer"
         });
         
         await _stdin.WriteLineAsync(json);
