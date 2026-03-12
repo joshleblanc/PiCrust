@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace PiCrust.Models
 {
     public class Configuration
@@ -5,7 +7,14 @@ namespace PiCrust.Models
         public string MiniMaxApiKey { get; set; } = string.Empty;
         public string DiscordToken { get; set; } = string.Empty;
         public string PiCodingAgentDir { get; set; } = string.Empty;
+        
+        // Single owner ID (for backward compatibility)
         public ulong OwnerId { get; set; }
+        
+        // List of verified user IDs who can interact with the bot
+        // Takes precedence over OwnerId if set
+        public List<ulong> VerifiedUserIds { get; set; } = new();
+        
         public int HeartbeatIntervalMinutes { get; set; }
         
         // Provider/Model configuration for pi

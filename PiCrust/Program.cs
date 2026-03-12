@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
@@ -43,6 +44,7 @@ public class Program
             DiscordToken = configuration["DISCORD_TOKEN"] ?? string.Empty,
             PiCodingAgentDir = configuration["PI_CODING_AGENT_DIR"] ?? string.Empty,
             OwnerId = ulong.TryParse(configuration["OWNER_ID"], out var ownerId) ? ownerId : 0,
+            VerifiedUserIds = ParseVerifiedUserIds(configuration["VERIFIED_USER_IDS"]),
             HeartbeatIntervalMinutes = int.TryParse(configuration["HEARTBEAT_INTERVAL_MINUTES"], out var interval) ? interval : 30,
             
             // Provider/Model configuration - supports "provider/model" format via PI_MODEL
@@ -178,4 +180,19 @@ public class PiModelOptions
 {
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Parses a comma-separated string of user IDs into a list of Ulongs.
+/// </summary>
+private static List<ulong> ParseVerifiedUserIds(string? input)
+{
+    if (string.IsNullOrWhiteSpace(input))
+        return new List<ulong>();
+
+    return input
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => ulong.TryParse(s, out var id) ? id : 0)
+        .Where(id => id > 0)
+        .ToList();
 }

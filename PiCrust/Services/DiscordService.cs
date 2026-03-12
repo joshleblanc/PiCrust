@@ -116,10 +116,20 @@ public class DiscordService(
 
     private bool ShouldRespond(SocketUserMessage message)
     {
-        if(message.Author.Id != config.OwnerId)
+        // Check if user is in the verified list (takes precedence)
+        if (config.VerifiedUserIds.Count > 0)
+        {
+            if (!config.VerifiedUserIds.Contains(message.Author.Id))
+            {
+                return false;
+            }
+        }
+        // Fall back to single OwnerId for backward compatibility
+        else if (message.Author.Id != config.OwnerId)
         {
             return false;
         }
+        
         // DM to the bot 
         if (message.Channel is SocketDMChannel)
         {
