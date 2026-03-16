@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace PiCrust.Models
@@ -8,11 +9,10 @@ namespace PiCrust.Models
         public string DiscordToken { get; set; } = string.Empty;
         public string PiCodingAgentDir { get; set; } = string.Empty;
         
-        // Single owner ID (for backward compatibility)
+        [Obsolete("No longer used - multi-user mode allows all users")]
         public ulong OwnerId { get; set; }
         
-        // List of verified user IDs who can interact with the bot
-        // Takes precedence over OwnerId if set
+        [Obsolete("No longer used - multi-user mode allows all users")]
         public List<ulong> VerifiedUserIds { get; set; } = new();
         
         public int HeartbeatIntervalMinutes { get; set; }

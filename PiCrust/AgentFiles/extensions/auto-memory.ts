@@ -3,62 +3,92 @@
  * 
  * Automatically updates MEMORY.md after each session with:
  * - Session summary
- * - Important context learned
- * - Tasks to follow up on
+ * - User-specific context learned (per-user sections)
+ * - Important global context
  * 
- * Install: Copy to ~/.pi/agent/extensions/ or include in a pi package
+ * Message format: <@userId in channel> message
+ * User sections are automatically created and updated based on who is talking.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 export default function (pi: ExtensionAPI) {
-    // Path to MEMORY.md (relative to agent dir)
     const MEMORY_PATH = "MEMORY.md";
-    const HEARTBEAT_PATH = "HEARTBEAT.md";
     
-    // Track messages for summarization
-    let messageCount = 0;
-    let lastSessionSummary = "";
+    // Track user IDs seen in current session
+    const userIdsInSession = new Set<string>();
+    const userMessages: Map<string, string[]> = new Map();
     
-    pi.on("session_shutdown", async (event, ctx) => {
-        const messages = event.messages;
-        if (!messages || messages.length === 0) return;
+    // Extract user ID from message format: <@123456789 in #channel> message
+    function extractUserId(text: string): string | null {
+        const match = text.match(/<@(\d+)/);
+        return match ? match[1] : null;
+    }
+    
+    // Extract user ID and channel from message
+    function parseMessageContext(text: string): { userId: string | null; channel: string | null } {
+        const userMatch = text.match(/<@(\d+)/);
+        const channelMatch = text.match(/in (.+?)>/);
         
-        messageCount += messages.length;
-        
-        // Only update memory after significant interactions
-        if (messageCount < 5) return;
-        
-        // Create a summary prompt
-        const summaryPrompt = `
-Please summarize the recent conversation in 2-3 sentences for persistent memory.
-Focus on:
-1. What was accomplished
-2. Any important decisions or context
-3. Tasks that may need follow-up
-
-Recent messages:
-${messages.slice(-10).map(m => `[${m.role}]: ${m.content?.slice(0, 200)}...`).join("\n")}
-`;
-        
-        try {
-            // Get summary from the model itself
-            const summary = await pi.callTool("memory_summary", {
-                prompt: summaryPrompt
-            });
+        return {
+            userId: userMatch ? userMatch[1] : null,
+            channel: channelMatch ? channelMatch[1] : null
+        };
+    }
+    
+    pi.on("message_create", async (event) => {
+        // Track users from user messages
+        if (event.role === "user" && event.content) {
+            const content = Array.isArray(event.content) 
+                ? event.content.map(c => c.text || "").join("")
+                : event.content;
             
-            if (summary && summary.content) {
-                lastSessionSummary = summary.content[0]?.text || "";
-                await updateMemoryFile(lastSessionSummary);
+            const { userId, channel } = parseMessageContext(content);
+            
+            if (userId) {
+                userIdsInSession.add(userId);
+                
+                // Track messages per user for summarization
+                if (!userMessages.has(userId)) {
+                    userMessages.set(userId, []);
+                }
+                userMessages.get(userId)!.push(content);
             }
-        } catch (error) {
         }
     });
     
-    async function updateMemoryFile(newContent: string) {
+    pi.on("session_shutdown", async (event) => {
+        const messages = event.messages;
+        if (!messages || messages.length === 0) return;
+        
+        // Extract user information from the session
+        const sessionUsers = new Map<string, string[]>();
+        
+        for (const msg of messages) {
+            if (msg.role === "user" && msg.content) {
+                const content = Array.isArray(msg.content)
+                    ? msg.content.map(c => c.text || "").join("")
+                    : msg.content;
+                
+                const { userId } = parseMessageContext(content);
+                if (userId) {
+                    if (!sessionUsers.has(userId)) {
+                        sessionUsers.set(userId, []);
+                    }
+                    sessionUsers.get(userId)!.push(content);
+                }
+            }
+        }
+        
+        // Update memory with user-specific info
+        await updateMemoryWithUsers(sessionUsers);
+    });
+    
+    async function updateMemoryWithUsers(sessionUsers: Map<string, string[]>) {
+        if (sessionUsers.size === 0) return;
+        
         try {
-            // Read existing MEMORY.md
             let existingContent = "";
             try {
                 const readResult = await pi.callTool("read", {
@@ -66,63 +96,127 @@ ${messages.slice(-10).map(m => `[${m.role}]: ${m.content?.slice(0, 200)}...`).jo
                 });
                 existingContent = readResult.content?.[0]?.text || "";
             } catch {
-                // File doesn't exist yet, use template
                 existingContent = getMemoryTemplate();
             }
             
-            // Parse existing file to find the "Recent Progress" section
-            const lines = existingContent.split("\n");
-            const updatedLines: string[] = [];
-            let inRecentSection = false;
-            let foundRecentSection = false;
-            
-            for (const line of lines) {
-                if (line.startsWith("## Recent Progress")) {
-                    inRecentSection = true;
-                    foundRecentSection = true;
-                    updatedLines.push(line);
-                    // Add new entry
-                    const timestamp = new Date().toISOString().split("T")[0];
-                    updatedLines.push(`- **${timestamp}**: ${newContent}`);
-                    updatedLines.push(""); // Empty line
-                } else if (inRecentSection && line.startsWith("## ")) {
-                    inRecentSection = false;
-                    updatedLines.push(line);
-                } else if (!inRecentSection) {
-                    updatedLines.push(line);
+            // Update each user's section
+            for (const [userId, userMsgs] of sessionUsers) {
+                const summary = await summarizeUserContext(userId, userMsgs);
+                if (summary) {
+                    existingContent = updateUserSection(existingContent, userId, summary);
                 }
             }
             
-            // If no Recent Progress section, add one
-            if (!foundRecentSection) {
-                updatedLines.push("\n## Recent Progress");
-                updatedLines.push(`- ${new Date().toISOString().split("T")[0]}: ${newContent}`);
-            }
-            
-            const updatedContent = updatedLines.join("\n");
-            
-            // Write updated MEMORY.md
+            // Write updated memory
             await pi.callTool("write", {
                 path: MEMORY_PATH,
-                content: updatedContent
+                content: existingContent
             });
             
         } catch (error) {
+            pi.log(`Auto-memory: Failed to update memory: ${error}`);
         }
     }
     
+    async function summarizeUserContext(userId: string, messages: string[]): Promise<string | null> {
+        if (messages.length < 2) return null;
+        
+        const prompt = `
+Analyze these messages from user @${userId} and extract:
+1. Any stated preferences (language, tone, etc.)
+2. Projects or topics they're working on
+3. Any important context that should be remembered
+
+User messages:
+${messages.map(m => `- ${m.slice(0, 300)}`).join("\n")}
+
+Respond with a brief 1-2 sentence summary of what you learned about this user, or "none" if there's nothing notable.`;
+        
+        try {
+            const result = await pi.callTool("memory_summary", { prompt });
+            const text = result.content?.[0]?.text || "";
+            
+            if (text.toLowerCase().includes("none") || text.length < 10) {
+                return null;
+            }
+            
+            return text.trim();
+        } catch {
+            return null;
+        }
+    }
+    
+    function updateUserSection(content: string, userId: string, newInfo: string): string {
+        const lines = content.split("\n");
+        const userSectionHeader = `## User: ${userId}`;
+        const updatedLines: string[] = [];
+        let foundUserSection = false;
+        let inUserSection = false;
+        let replaced = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Check if we're at the user section
+            if (line.startsWith(userSectionHeader)) {
+                foundUserSection = true;
+                inUserSection = true;
+                updatedLines.push(line);
+                
+                // Replace existing content in this section until next ## header or end
+                const timestamp = new Date().toISOString().split("T")[0];
+                updatedLines.push(`- **${timestamp}**: ${newInfo}`);
+                replaced = true;
+                continue;
+            }
+            
+            // End of user section
+            if (inUserSection && line.startsWith("## ")) {
+                inUserSection = false;
+            }
+            
+            // Skip old entries if we replaced
+            if (inUserSection && replaced && line.startsWith("- ")) {
+                continue;
+            }
+            
+            // Don't add duplicate entries
+            if (line.includes(newInfo)) {
+                continue;
+            }
+            
+            updatedLines.push(line);
+        }
+        
+        // If user section doesn't exist, add it
+        if (!foundUserSection) {
+            // Find a good place to insert - after "## User Preferences" or before "## Notes"
+            let insertIndex = updatedLines.findIndex(l => l.startsWith("## Notes"));
+            if (insertIndex === -1) {
+                insertIndex = updatedLines.length;
+            }
+            
+            updatedLines.splice(insertIndex, 0, "");
+            updatedLines.splice(insertIndex + 1, 0, userSectionHeader);
+            updatedLines.splice(insertIndex + 2, 0, `- **${new Date().toISOString().split("T")[0]}**: ${newInfo}`);
+        }
+        
+        return updatedLines.join("\n");
+    }
+    
     function getMemoryTemplate(): string {
-        return `# Assistant Memory
+        return `# Memory
 
 _Last updated: ${new Date().toISOString().split("T")[0]}_
 
 This file contains persistent context that survives across pi restarts and sessions.
 
-## User Preferences
+## Global Preferences
 
-## Current Context
+- Multi-user mode: enabled
+- All Discord users can interact with the assistant
 
-## Recent Progress
+## User Context
 
 ## Notes
 
@@ -130,22 +224,26 @@ This file contains persistent context that survives across pi restarts and sessi
 `;
     }
     
-    // Register a command to manually view/edit memory
+    // Register a command to view memory
     pi.registerCommand("memory", {
         label: "View Memory",
-        description: "View and edit persistent memory",
-        parameters: Type.Object({
-            edit: Type.Optional(Type.Boolean({ description: "Edit MEMORY.md" }))
-        }),
-        handler: async (args, ctx) => {
-            // Just read and show
-            const readResult = await pi.callTool("read", {
-                path: MEMORY_PATH
-            });
-            return {
-                content: [{ type: "text", text: readResult.content?.[0]?.text || "No memory file found." }],
-                details: {}
-            };
+        description: "View persistent memory",
+        parameters: Type.Object({}),
+        handler: async () => {
+            try {
+                const readResult = await pi.callTool("read", {
+                    path: MEMORY_PATH
+                });
+                return {
+                    content: [{ type: "text", text: readResult.content?.[0]?.text || "No memory found." }],
+                    details: {}
+                };
+            } catch {
+                return {
+                    content: [{ type: "text", text: "No memory file found." }],
+                    details: {}
+                };
+            }
         }
     });
     

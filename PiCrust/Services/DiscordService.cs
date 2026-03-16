@@ -78,67 +78,108 @@ public class DiscordService(
         // Only handle user messages
         if (message is not SocketUserMessage userMessage) return;
 
-        // Track this channel as the last used channel (for heartbeats, etc.)
-        if (userMessage.Channel is ISocketMessageChannel channel)
+        // Get channel reference before we lose it
+        ISocketMessageChannel? channel = userMessage.Channel;
+
+        // Track the last used channel for system messages (heartbeats, etc.)
+        _lastChannel = channel;
+        OnChannelUsed?.Invoke(channel);
+
+        // Determine if this is a direct request or background listening
+        var isDirect = IsDirectRequest(userMessage);
+        
+        // Always process messages (always listening mode)
+        // But mark them as direct or background
+        var channelName = GetChannelName(channel);
+        
+        // Format:
+        // - Direct: <@userId in channel> message (respond always)
+        // - Background: [background] <@userId in channel> message (respond only if helpful)
+        var prefix = isDirect ? "" : "[background] ";
+        var attributedMessage = $"{prefix}<@{message.Author.Id} in {channelName}> {message.Content}";
+
+        if (isDirect)
         {
-            _lastChannel = channel;
-            OnChannelUsed?.Invoke(channel);
-            _logger.LogDebug("Tracking channel: {ChannelType} ({ChannelId})",
-                channel.GetType().Name, channel.Id);
+            _logger.LogInformation("Received DIRECT message from {User} ({UserId}) in {Channel}: {Content}",
+                message.Author.Username,
+                message.Author.Id,
+                channelName,
+                Truncate(message.Content, 100));
+        }
+        else
+        {
+            _logger.LogDebug("Background: {User} in {Channel}: {Content}",
+                message.Author.Username,
+                channelName,
+                Truncate(message.Content, 100));
         }
 
-        // Check if we should respond
-        if (!ShouldRespond(userMessage))
-        {
-            _logger.LogDebug("Ignoring message: {Content}", Truncate(message.Content, 100));
-            return;
-        }
-
-        _logger.LogInformation("Received message from {User}: {Content}",
-            message.Author.Username,
-            Truncate(message.Content, 100));
-
-        // Track this request for response
+        // Track this request for response (if it's direct or if pi responds to background)
         var pendingRequest = new PendingRequest
         {
-            Channel = message.Channel,
+            Channel = channel,
             OriginalMessage = userMessage,
             StartedAt = DateTime.UtcNow,
+            UserId = message.Author.Id,
+            IsDirect = isDirect
         };
-        _typing ??= message.Channel.EnterTypingState();
-        _pendingRequests[message.Id] = pendingRequest;
-        _responseBuffers[message.Id] = new StringBuilder();
+        
+        // Only show typing for direct requests - background messages don't expect immediate response
+        if (isDirect)
+        {
+            _typing ??= channel.EnterTypingState();
+        }
+        
+        _pendingRequests[userMessage.Id] = pendingRequest;
+        _responseBuffers[userMessage.Id] = new StringBuilder();
 
         var images = await ExtractImagesAsync(userMessage);
 
-        await _piClient.SendPromptFireAndForgetAsync(userMessage.Content, images);
+        // Send attributed message to pi
+        await _piClient.SendPromptFireAndForgetAsync(attributedMessage, images);
     }
 
-    private bool ShouldRespond(SocketUserMessage message)
+    private string GetChannelName(ISocketMessageChannel channel)
     {
-        // Check if user is in the verified list (takes precedence)
-        if (config.VerifiedUserIds.Count > 0)
+        if (channel is SocketDMChannel dm)
         {
-            if (!config.VerifiedUserIds.Contains(message.Author.Id))
-            {
-                return false;
-            }
+            return $"DM with {dm.Recipient.Username}";
         }
-        // Fall back to single OwnerId for backward compatibility
-        else if (message.Author.Id != config.OwnerId)
+        if (channel is SocketTextChannel tc)
         {
-            return false;
+            return $"#{tc.Name} in {tc.Guild.Name}";
         }
-        
-        // DM to the bot 
+        return channel.Name ?? "unknown";
+    }
+
+    /// <summary>
+    /// Determines if this is a direct request (DM or mention) vs background listening.
+    /// </summary>
+    private bool IsDirectRequest(SocketUserMessage message)
+    {
+        // DM is always direct
         if (message.Channel is SocketDMChannel)
         {
             return true;
         }
-        else
+        
+        // Check if the bot was mentioned in a text channel
+        if (message.Channel is SocketTextChannel)
         {
-            return false;
+            var mentions = message.MentionedUsers;
+            if (mentions.Any(u => u.Id == _client.CurrentUser?.Id))
+            {
+                return true;
+            }
+            
+            // Check for @everyone or @here
+            if (message.MentionedEveryone)
+            {
+                return true;
+            }
         }
+        
+        return false;
     }
 
     private async Task<List<PiImage>> ExtractImagesAsync(SocketUserMessage message)
@@ -171,7 +212,6 @@ public class DiscordService(
 
     private async Task HandleTurnEndAsync(JsonNode data)
     {
-
         var oldestRequest = _pendingRequests.OrderBy(kvp => kvp.Value.StartedAt).FirstOrDefault();
         if (oldestRequest.Value == null) return;
 
@@ -198,12 +238,46 @@ public class DiscordService(
         }
 
         var textContent = text["text"]?.GetValue<string>();
-        if(textContent == null)
+        if (textContent == null)
         {
             return;
         }
 
-        SendMessageToDMChannelAsync((SocketDMChannel)oldestRequest.Value.Channel!, textContent).Wait();
+        // For background messages, only respond if the content is substantive
+        // (not empty, not just "okay", etc.)
+        if (!oldestRequest.Value.IsDirect && !ShouldProactivelyRespond(textContent))
+        {
+            _logger.LogDebug("Background message - not responding (content too minimal)");
+            return;
+        }
+
+        // Send response to the appropriate channel (not just DM)
+        var channel = oldestRequest.Value.Channel;
+        if (channel != null)
+        {
+            await SendMessageToChannelAsync(channel, textContent);
+        }
+    }
+
+    /// <summary>
+    /// Determines if we should respond to a background message.
+    /// Don't respond to empty or very short content.
+    /// </summary>
+    private bool ShouldProactivelyRespond(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        // Strip markdown and check length
+        var stripped = content.Trim();
+        
+        // Don't respond to acknowledgments or very short messages
+        var shortResponses = new[] { "ok", "okay", "thanks", "thank you", "got it", "sure", "yes", "no", "👍", "👀" };
+        if (shortResponses.Any(s => stripped.Equals(s, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        // Only respond if there's meaningful content
+        return stripped.Length > 10;
     }
 
     private async Task HandlePiEventAsync(PiEvent evt)
@@ -327,13 +401,17 @@ public class DiscordService(
         }
     }
 
-    private async Task SendMessageToDMChannelAsync(SocketDMChannel dmChannel, string response)
+    private async Task SendMessageToChannelAsync(ISocketMessageChannel channel, string response)
     {
         const int maxLength = 2000;
+        
         if (response.Length <= maxLength)
         {
-            await dmChannel.SendMessageAsync(response);
-            _logger.LogDebug("Sent response to DM channel");
+            await channel.SendMessageAsync(response);
+            
+            // Log where we sent the response
+            var channelDesc = channel is SocketDMChannel ? "DM" : $"channel {(channel as SocketTextChannel)?.Name ?? channel.Id.ToString()}";
+            _logger.LogDebug("Sent response to {Channel}", channelDesc);
         }
         else
         {
@@ -341,8 +419,8 @@ public class DiscordService(
             var chunks = SplitMessage(response, maxLength);
             foreach (var chunk in chunks)
             {
-                await dmChannel.SendMessageAsync(chunk);
-                _logger.LogDebug("Sent DM chunk ({Length} chars)", chunk.Length);
+                await channel.SendMessageAsync(chunk);
+                _logger.LogDebug("Sent chunk ({Length} chars)", chunk.Length);
                 // Small delay between chunks to avoid rate limiting
                 await Task.Delay(100);
             }
@@ -402,6 +480,7 @@ public class DiscordService(
         public ISocketMessageChannel? Channel { get; init; }
         public SocketUserMessage? OriginalMessage { get; init; }
         public DateTime StartedAt { get; init; }
-        public IDisposable Typing { get; internal set; }
+        public ulong UserId { get; init; }
+        public bool IsDirect { get; init; }  // Direct request vs background listening
     }
 }
