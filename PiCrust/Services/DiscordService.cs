@@ -11,25 +11,14 @@ namespace PiCrust.Services;
 
 /// <summary>
 /// Discord bot service that relays messages between Discord and pi.
+/// Only responds to mentions and DMs (lurk mode), but maintains conversation context.
 /// </summary>
-public class DiscordService(
-    DiscordSocketClient client,
-    PiService piClient,
-    ILogger<DiscordService> logger,
-    Configuration config) : BackgroundService
+public class DiscordService : BackgroundService
 {
-    private readonly DiscordSocketClient _client = client;
-    private readonly PiService _piClient = piClient;
-    private readonly ILogger<DiscordService> _logger = logger;
-
-    // Track pending requests: message ID -> channel/response info
-    private readonly ConcurrentDictionary<ulong, PendingRequest> _pendingRequests = new();
-
-    // Response buffer per message
-    private readonly ConcurrentDictionary<ulong, StringBuilder> _responseBuffers = new();
-
-    // Track sent Discord messages for streaming updates: Discord message ID -> request message ID
-    private readonly ConcurrentDictionary<ulong, ulong> _discordMessagesToRequests = new();
+    private readonly DiscordSocketClient _client;
+    private readonly PiService _piClient;
+    private readonly ILogger<DiscordService> _logger;
+    private readonly Configuration _config;
 
     // Track the last used channel for system messages (heartbeats, etc.)
     private ISocketMessageChannel? _lastChannel;
@@ -40,11 +29,29 @@ public class DiscordService(
     private IDisposable? _typing;
 
     // Track whether a runtime reload is needed after the current agent run
-    private bool _reloadNeeded = false;    
+    private bool _reloadNeeded = false;
+    
+    // Track if we're currently expecting a response from pi (for direct messages only)
+    private bool _waitingForResponse = false;
+    
+    // Track the channel to respond to for the current request
+    private ISocketMessageChannel? _pendingResponseChannel;
+
+    public DiscordService(
+        DiscordSocketClient client,
+        PiService piClient,
+        ILogger<DiscordService> logger,
+        Configuration config)
+    {
+        _client = client;
+        _piClient = piClient;
+        _logger = logger;
+        _config = config;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Discord service starting...");
+        _logger.LogInformation("Discord service starting (lurk mode with context)...");
 
         _client.Log += msg =>
         {
@@ -63,7 +70,7 @@ public class DiscordService(
         _piClient.OnEvent += HandlePiEventAsync;
 
         // Login and start
-        await _client.LoginAsync(TokenType.Bot, config.DiscordToken, true);
+        await _client.LoginAsync(TokenType.Bot, _config.DiscordToken, true);
         await _client.StartAsync();
 
         // Keep running until cancelled
@@ -85,19 +92,9 @@ public class DiscordService(
         _lastChannel = channel;
         OnChannelUsed?.Invoke(channel);
 
-        // Determine if this is a direct request or background listening
+        var channelName = GetChannelName(channel);
         var isDirect = IsDirectRequest(userMessage);
         
-        // Always process messages (always listening mode)
-        // But mark them as direct or background
-        var channelName = GetChannelName(channel);
-        
-        // Format:
-        // - Direct: <@userId in channel> message (respond always)
-        // - Background: [background] <@userId in channel> message (respond only if helpful)
-        var prefix = isDirect ? "" : "[background] ";
-        var attributedMessage = $"{prefix}<@{message.Author.Id} in {channelName}> {message.Content}";
-
         if (isDirect)
         {
             _logger.LogInformation("Received DIRECT message from {User} ({UserId}) in {Channel}: {Content}",
@@ -114,29 +111,36 @@ public class DiscordService(
                 Truncate(message.Content, 100));
         }
 
-        // Track this request for response (if it's direct or if pi responds to background)
-        var pendingRequest = new PendingRequest
-        {
-            Channel = channel,
-            OriginalMessage = userMessage,
-            StartedAt = DateTime.UtcNow,
-            UserId = message.Author.Id,
-            IsDirect = isDirect
-        };
-        
-        // Only show typing for direct requests - background messages don't expect immediate response
-        if (isDirect)
-        {
-            _typing ??= channel.EnterTypingState();
-        }
-        
-        _pendingRequests[userMessage.Id] = pendingRequest;
-        _responseBuffers[userMessage.Id] = new StringBuilder();
-
         var images = await ExtractImagesAsync(userMessage);
 
-        // Send attributed message to pi
-        await _piClient.SendPromptFireAndForgetAsync(attributedMessage, images);
+        if (isDirect)
+        {
+            // Direct mention - show typing and expect a response
+            _typing ??= channel.EnterTypingState();
+            _waitingForResponse = true;
+            _pendingResponseChannel = channel;
+            
+            // Send as a new prompt
+            var attributedMessage = $"<@{message.Author.Id} in {channelName}> {message.Content}";
+            await _piClient.SendPromptFireAndForgetAsync(attributedMessage, images);
+        }
+        else
+        {
+            // Background message - send for context but DON'T expect a response
+            // Use meta instruction format that pi understands to not respond
+            var backgroundMessage = $"<meta>Background channel message — DO NOT derail from your current task and continue work / responding. Acknowledge only if directly relevant. If you just sent a final response, respond with only one word NULL unless this message should provoke a direct followup.</meta>\n\n<@{message.Author.Id} in {channelName}> {message.Content}\n\n<meta>Before reacting in any way, consider silently whether to adjust course in any way or continue in your current trajectory.</meta>";
+            
+            if (_waitingForResponse)
+            {
+                // Agent is currently processing a direct message, steer the background message into the active session
+                await _piClient.SendSteerAsync(backgroundMessage);
+            }
+            else
+            {
+                // No active session, send as a new prompt but mark as background (pi will respond with NULL)
+                await _piClient.SendPromptFireAndForgetAsync(backgroundMessage, images);
+            }
+        }
     }
 
     private string GetChannelName(ISocketMessageChannel channel)
@@ -153,7 +157,7 @@ public class DiscordService(
     }
 
     /// <summary>
-    /// Determines if this is a direct request (DM or mention) vs background listening.
+    /// Determines if this is a direct request (DM or mention) vs background.
     /// </summary>
     private bool IsDirectRequest(SocketUserMessage message)
     {
@@ -212,8 +216,11 @@ public class DiscordService(
 
     private async Task HandleTurnEndAsync(JsonNode data)
     {
-        var oldestRequest = _pendingRequests.OrderBy(kvp => kvp.Value.StartedAt).FirstOrDefault();
-        if (oldestRequest.Value == null) return;
+        // Only respond if we were expecting a response (direct message)
+        if (!_waitingForResponse || _pendingResponseChannel == null)
+        {
+            return;
+        }
 
         var message = data["message"];
         if (message == null) return;
@@ -226,7 +233,7 @@ public class DiscordService(
         var customType = message["customType"]?.GetValue<string>();
         if (customType == "discord_reaction")
         {
-            await ProcessDiscordReactionMessageAsync(message, oldestRequest.Value);
+            await ProcessDiscordReactionMessageAsync(message);
             return;
         }
 
@@ -243,41 +250,16 @@ public class DiscordService(
             return;
         }
 
-        // For background messages, only respond if the content is substantive
-        // (not empty, not just "okay", etc.)
-        if (!oldestRequest.Value.IsDirect && !ShouldProactivelyRespond(textContent))
+        // Skip responses that are "NULL" - this happens when the LLM follows
+        // the meta instruction to not respond to background messages
+        if (string.Equals(textContent.Trim(), "NULL", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogDebug("Background message - not responding (content too minimal)");
+            _logger.LogDebug("Skipping NULL response from LLM");
             return;
         }
 
-        // Send response to the appropriate channel (not just DM)
-        var channel = oldestRequest.Value.Channel;
-        if (channel != null)
-        {
-            await SendMessageToChannelAsync(channel, textContent);
-        }
-    }
-
-    /// <summary>
-    /// Determines if we should respond to a background message.
-    /// Don't respond to empty or very short content.
-    /// </summary>
-    private bool ShouldProactivelyRespond(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return false;
-
-        // Strip markdown and check length
-        var stripped = content.Trim();
-        
-        // Don't respond to acknowledgments or very short messages
-        var shortResponses = new[] { "ok", "okay", "thanks", "thank you", "got it", "sure", "yes", "no", "👍", "👀" };
-        if (shortResponses.Any(s => stripped.Equals(s, StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        // Only respond if there's meaningful content
-        return stripped.Length > 10;
+        // Send response to Discord
+        await SendMessageToChannelAsync(_pendingResponseChannel, textContent);
     }
 
     private async Task HandlePiEventAsync(PiEvent evt)
@@ -285,7 +267,6 @@ public class DiscordService(
         switch (evt.Type)
         {
             case "message_update":
-                //await HandleMessageUpdateAsync(evt.Data);
                 break;
             case "agent_end":
                 await HandleAgentEndAsync(evt.Data);
@@ -295,7 +276,6 @@ public class DiscordService(
                 break;
             case "tool_execution_start":
             case "tool_execution_end":
-                // Tool notifications are logged but not sent to Discord
                 _logger.LogDebug("Tool execution: {Tool}", evt.Data["toolName"]);
                 break;
         }
@@ -303,41 +283,15 @@ public class DiscordService(
 
     private async Task HandleAgentEndAsync(JsonNode data)
     {
-        // Find the oldest pending request
-        if (!_pendingRequests.Any())
-        {
-            _logger.LogDebug("No pending requests, ignoring agent_end");
-        }
-        else
-        {
-            var oldestRequest = _pendingRequests.OrderBy(kvp => kvp.Value.StartedAt).First();
-            var requestId = oldestRequest.Key;
-            var pendingRequest = oldestRequest.Value;
+        // Clear waiting state when agent ends
+        _waitingForResponse = false;
+        _pendingResponseChannel = null;
 
-            // Check if we've already sent messages for this request (streaming happened)
-            var existingMessageIds = _discordMessagesToRequests
-                .Where(kvp => kvp.Value == requestId)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            // Clean up tracking for this request
-            foreach (var msgId in existingMessageIds)
-            {
-                _discordMessagesToRequests.TryRemove(msgId, out _);
-            }
-            _pendingRequests.TryRemove(requestId, out _);
-        }
-
-        // Trigger runtime reload if a package operation was performed
-        // This runs regardless of whether there was a pending Discord request
         if (_reloadNeeded)
         {
             _reloadNeeded = false;
             _logger.LogInformation("Package operation detected, triggering runtime reload");
 
-            // Fire restart on a separate thread — we can't await it here because
-            // this code runs inside the event listener, and RestartAsync needs
-            // the listener to exit first (otherwise it deadlocks).
             var channel = _lastChannel;
             _ = Task.Run(async () =>
             {
@@ -357,12 +311,11 @@ public class DiscordService(
             });
         }
 
-        // Always stop the typing indicator when the agent finishes
         _typing?.Dispose();
         _typing = null;
     }
 
-    private async Task ProcessDiscordReactionMessageAsync(JsonNode message, PendingRequest pendingRequest)
+    private async Task ProcessDiscordReactionMessageAsync(JsonNode message)
     {
         try
         {
@@ -382,18 +335,9 @@ public class DiscordService(
 
             var emoji = reactionData["emoji"]?.GetValue<string>();
 
-
-            // Add reaction to the original message
-            if (pendingRequest.OriginalMessage != null)
-            {
-                var emote = new Emoji(emoji);
-                await pendingRequest.OriginalMessage.AddReactionAsync(emote);
-                _logger.LogInformation("Added reaction {Emoji} to message {MessageId}", emoji, pendingRequest.OriginalMessage.Id);
-            }
-            else
-            {
-                _logger.LogDebug("No original message available for reaction");
-            }
+            // We need the original message to react to - this is a limitation
+            // For now, log that we received a reaction request
+            _logger.LogDebug("Discord reaction requested: {Emoji}", emoji);
         }
         catch (Exception ex)
         {
@@ -409,19 +353,16 @@ public class DiscordService(
         {
             await channel.SendMessageAsync(response);
             
-            // Log where we sent the response
             var channelDesc = channel is SocketDMChannel ? "DM" : $"channel {(channel as SocketTextChannel)?.Name ?? channel.Id.ToString()}";
             _logger.LogDebug("Sent response to {Channel}", channelDesc);
         }
         else
         {
-            // Split into chunks
             var chunks = SplitMessage(response, maxLength);
             foreach (var chunk in chunks)
             {
                 await channel.SendMessageAsync(chunk);
                 _logger.LogDebug("Sent chunk ({Length} chars)", chunk.Length);
-                // Small delay between chunks to avoid rate limiting
                 await Task.Delay(100);
             }
         }
@@ -474,13 +415,4 @@ public class DiscordService(
 
     private static string Truncate(string s, int maxLength) =>
         string.IsNullOrEmpty(s) || s.Length <= maxLength ? s : s[..maxLength] + "...";
-
-    private record PendingRequest
-    {
-        public ISocketMessageChannel? Channel { get; init; }
-        public SocketUserMessage? OriginalMessage { get; init; }
-        public DateTime StartedAt { get; init; }
-        public ulong UserId { get; init; }
-        public bool IsDirect { get; init; }  // Direct request vs background listening
-    }
 }
