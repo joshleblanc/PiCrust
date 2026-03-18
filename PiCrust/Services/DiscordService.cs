@@ -26,16 +26,12 @@ public class DiscordService : BackgroundService
     // Event that other services can subscribe to for channel tracking
     public event Action<ISocketMessageChannel>? OnChannelUsed;
 
-    private IDisposable? _typing;
-
     // Track whether a runtime reload is needed after the current agent run
     private bool _reloadNeeded = false;
-    
-    // Track if we're currently expecting a response from pi (for direct messages only)
-    private bool _waitingForResponse = false;
-    
-    // Track the channel to respond to for the current request
-    private ISocketMessageChannel? _pendingResponseChannel;
+
+    // Queue to ensure only one direct message is processed at a time
+    // This prevents race conditions where concurrent DMs would have responses delivered to wrong users
+    private readonly SemaphoreSlim _directMessageLock = new(1, 1);
 
     public DiscordService(
         DiscordSocketClient client,
@@ -79,67 +75,82 @@ public class DiscordService : BackgroundService
 
     private async Task HandleMessageReceivedAsync(SocketMessage message)
     {
-        // Ignore own messages
-        if (message.Author.Id == _client.CurrentUser?.Id) return;
-
-        // Only handle user messages
-        if (message is not SocketUserMessage userMessage) return;
-
-        // Get channel reference before we lose it
-        ISocketMessageChannel? channel = userMessage.Channel;
-
-        // Track the last used channel for system messages (heartbeats, etc.)
-        _lastChannel = channel;
-        OnChannelUsed?.Invoke(channel);
-
-        var channelName = GetChannelName(channel);
-        var isDirect = IsDirectRequest(userMessage);
-        
-        if (isDirect)
+        try
         {
-            _logger.LogInformation("Received DIRECT message from {User} ({UserId}) in {Channel}: {Content}",
-                message.Author.Username,
-                message.Author.Id,
-                channelName,
-                Truncate(message.Content, 100));
-        }
-        else
-        {
-            _logger.LogDebug("Background: {User} in {Channel}: {Content}",
-                message.Author.Username,
-                channelName,
-                Truncate(message.Content, 100));
-        }
+            // Ignore own messages
+            if (message.Author.Id == _client.CurrentUser?.Id) return;
 
-        var images = await ExtractImagesAsync(userMessage);
+            // Only handle user messages
+            if (message is not SocketUserMessage userMessage) return;
 
-        if (isDirect)
-        {
-            // Direct mention - show typing and expect a response
-            _typing ??= channel.EnterTypingState();
-            _waitingForResponse = true;
-            _pendingResponseChannel = channel;
-            
-            // Send as a new prompt
-            var attributedMessage = $"<@{message.Author.Id} in {channelName}> {message.Content}";
-            await _piClient.SendPromptFireAndForgetAsync(attributedMessage, images);
-        }
-        else
-        {
-            // Background message - send for context but DON'T expect a response
-            // Use meta instruction format that pi understands to not respond
-            var backgroundMessage = $"<meta>Background channel message — DO NOT derail from your current task and continue work / responding. Acknowledge only if directly relevant. If you just sent a final response, respond with only one word NULL unless this message should provoke a direct followup.</meta>\n\n<@{message.Author.Id} in {channelName}> {message.Content}\n\n<meta>Before reacting in any way, consider silently whether to adjust course in any way or continue in your current trajectory.</meta>";
-            
-            if (_waitingForResponse)
+            // Get channel reference before we lose it
+            ISocketMessageChannel? channel = userMessage.Channel;
+
+            // Track the last used channel for system messages (heartbeats, etc.)
+            _lastChannel = channel;
+            OnChannelUsed?.Invoke(channel);
+
+            var channelName = GetChannelName(channel);
+            var isDirect = IsDirectRequest(userMessage);
+
+            if (isDirect)
             {
-                // Agent is currently processing a direct message, steer the background message into the active session
-                await _piClient.SendSteerAsync(backgroundMessage);
+                _logger.LogInformation("Received DIRECT message from {User} ({UserId}) in {Channel}: {Content}",
+                    message.Author.Username,
+                    message.Author.Id,
+                    channelName,
+                    Truncate(message.Content, 100));
             }
             else
             {
-                // No active session, send as a new prompt but mark as background (pi will respond with NULL)
+                _logger.LogDebug("Background: {User} in {Channel}: {Content}",
+                    message.Author.Username,
+                    channelName,
+                    Truncate(message.Content, 100));
+            }
+
+            var images = await ExtractImagesAsync(userMessage);
+
+            if (isDirect)
+            {
+                // Wait for any in-progress direct message to complete before processing
+                // This ensures responses go to the correct user
+                await _directMessageLock.WaitAsync();
+                try
+                {
+                    // Show typing indicator and send the message
+                    using var typing = channel.EnterTypingState();
+                    var attributedMessage = $"<@{message.Author.Id} in {channelName}> {message.Content}";
+                    await _piClient.SendPromptFireAndForgetAsync(attributedMessage, images);
+                }
+                catch (PiService.PiNotRunningException ex)
+                {
+                    // pi was not running - the service has triggered a restart
+                    // Release the semaphore and notify the user
+                    _directMessageLock.Release();
+                    _logger.LogWarning("Pi was not running, restart triggered: {Message}", ex.Message);
+                    await channel.SendMessageAsync("Sorry, I was restarting. Please try again in a moment.");
+                    return;
+                }
+                catch (Exception)
+                {
+                    _directMessageLock.Release();
+                    throw;
+                }
+            }
+            else
+            {
+                // Background message - send for context but DON'T expect a response
+                // Use meta instruction format that pi understands to not respond
+                var backgroundMessage = $"<meta>Background channel message — DO NOT derail from your current task and continue work / responding. Acknowledge only if directly relevant. If you just sent a final response, respond with only one word NULL unless this message should provoke a direct followup.</meta>\n\n<@{message.Author.Id} in {channelName}> {message.Content}\n\n<meta>Before reacting in any way, consider silently whether to adjust course in any way or continue in your current trajectory.</meta>";
+
+                // Background messages always go through as prompts (pi will respond with NULL per meta instructions)
                 await _piClient.SendPromptFireAndForgetAsync(backgroundMessage, images);
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling message from {User}: {Message}", message.Author.Username, Truncate(message.Content, 100));
         }
     }
 
@@ -216,12 +227,6 @@ public class DiscordService : BackgroundService
 
     private async Task HandleTurnEndAsync(JsonNode data)
     {
-        // Only respond if we were expecting a response (direct message)
-        if (!_waitingForResponse || _pendingResponseChannel == null)
-        {
-            return;
-        }
-
         var message = data["message"];
         if (message == null) return;
 
@@ -258,8 +263,13 @@ public class DiscordService : BackgroundService
             return;
         }
 
-        // Send response to Discord
-        await SendMessageToChannelAsync(_pendingResponseChannel, textContent);
+        // Send response to the channel that initiated this direct message
+        // The semaphore ensures only one direct message is in flight at a time,
+        // so _lastChannel will always be the correct channel
+        if (_lastChannel != null)
+        {
+            await SendMessageToChannelAsync(_lastChannel, textContent);
+        }
     }
 
     private async Task HandlePiEventAsync(PiEvent evt)
@@ -283,9 +293,9 @@ public class DiscordService : BackgroundService
 
     private async Task HandleAgentEndAsync(JsonNode data)
     {
-        // Clear waiting state when agent ends
-        _waitingForResponse = false;
-        _pendingResponseChannel = null;
+        // Release the semaphore to allow the next queued direct message to proceed
+        // This must be done before any async operations to prevent deadlocks
+        _directMessageLock.Release();
 
         if (_reloadNeeded)
         {
@@ -310,9 +320,6 @@ public class DiscordService : BackgroundService
                 }
             });
         }
-
-        _typing?.Dispose();
-        _typing = null;
     }
 
     private async Task ProcessDiscordReactionMessageAsync(JsonNode message)

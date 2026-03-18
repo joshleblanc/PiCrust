@@ -39,6 +39,11 @@ public class PiService(
     public event Func<PiEvent, Task>? OnEvent;
     public event Func<string, Task>? OnLog;
 
+    /// <summary>
+    /// Returns true if the pi process is running and ready to accept commands.
+    /// </summary>
+    public bool IsPiRunning => _process != null && !_process.HasExited && _stdin != null;
+
     // Specialized handler for heartbeat responses (to avoid conflict with regular message handling)
     private Func<PiEvent, Task>? _heartbeatHandler;
 
@@ -329,6 +334,15 @@ public class PiService(
     }
 
     /// <summary>
+    /// Exception thrown when pi process is not running.
+    /// </summary>
+    public class PiNotRunningException : Exception
+    {
+        public PiNotRunningException() { }
+        public PiNotRunningException(string message) : base(message) { }
+    }
+
+    /// <summary>
     /// Sends a prompt without waiting for completion. Events still stream via OnEvent.
     /// Use this for fire-and-forget background tasks.
     /// </summary>
@@ -337,10 +351,18 @@ public class PiService(
         // Wait for the process to be ready (blocks during restart)
         await _readyGate.Task;
 
+        // Check if pi process has crashed
+        if (_process == null || _process.HasExited)
+        {
+            _logger.LogWarning("pi process not running, restarting...");
+            _ = RestartAsync();
+            throw new PiNotRunningException("pi process is not running, restart triggered");
+        }
+
         if (_stdin == null)
         {
             _logger.LogError("pi stdin not available");
-            return;
+            throw new PiNotRunningException("pi stdin not available");
         }
 
         var json = JsonSerializer.Serialize(new
@@ -350,10 +372,10 @@ public class PiService(
             images = images?.Select(i => new { type = "image", data = i.Data, mimeType = i.MimeType }).ToArray(),
             streamingBehavior = "steer"
         });
-        
+
         await _stdin.WriteLineAsync(json);
         await _stdin.FlushAsync();
-        
+
         _logger.LogInformation("Fire-and-forget prompt sent, events will stream asynchronously");
     }
 
@@ -406,6 +428,14 @@ public class PiService(
         // Wait for the process to be ready (blocks during restart)
         await _readyGate.Task;
 
+        // Check if pi process has crashed
+        if (_process == null || _process.HasExited)
+        {
+            _logger.LogWarning("pi process not running, restarting...");
+            _ = RestartAsync();
+            return;
+        }
+
         if (_stdin == null)
         {
             _logger.LogError("pi stdin not available");
@@ -421,6 +451,14 @@ public class PiService(
     {
         // Wait for the process to be ready (blocks during restart)
         await _readyGate.Task;
+
+        // Check if pi process has crashed
+        if (_process == null || _process.HasExited)
+        {
+            _logger.LogWarning("pi process not running, restarting...");
+            _ = RestartAsync();
+            throw new InvalidOperationException("pi process not running, restart triggered");
+        }
 
         if (_stdin == null)
         {
