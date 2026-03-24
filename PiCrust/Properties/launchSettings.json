@@ -7,7 +7,7 @@
       },
       "containerRunEnvironmentFiles": "PiCrust\\.env",
       "publishAllPorts": true,
-      "containerRunArguments": "-p 18789:18789"
+      "containerRunArguments": "-p 18789:18789 -v C:\\source\\pi-crust\\PiCrust\\AgentFiles:/home/picrust"
     }
   }
 }

@@ -22,6 +22,7 @@
     <None Remove="AgentFiles\**" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="AgentFiles\extensions\minimax\package.json" />
     <Content Include="agentfiles\models.json" />
   </ItemGroup>
 
@@ -66,6 +67,7 @@
     <None Include="AgentFiles\BOOTSTRAP.md" />
     <None Include="AgentFiles\extensions\auto-memory.ts" />
     <None Include="AgentFiles\extensions\discord-reactions.ts" />
+    <None Include="AgentFiles\extensions\minimax\index.ts" />
     <None Include="AgentFiles\extensions\package-manager.ts" />
     <None Include="agentfiles\extensions\picrust.ts" />
     <None Include="AgentFiles\extensions\reload-runtime.ts" />

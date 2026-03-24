@@ -35,5 +35,9 @@ namespace PiCrust.Models
         public string ElevenLabsApiKey { get; set; } = string.Empty;
         public string ElevenLabsVoiceId { get; set; } = string.Empty;
         public string ElevenLabsModelId { get; set; } = "eleven_v3";
+
+        // MiniMax Image Generation configuration
+        public string MiniMaxImageModel { get; set; } = "image-01";
+        public string MiniMaxDefaultAspectRatio { get; set; } = "1:1";
     }
 }

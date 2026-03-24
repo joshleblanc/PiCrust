@@ -135,6 +135,14 @@ public class Program
                     return new RabbitGatewayService(logger, config, piService);
                 });
                 services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RabbitGatewayService>());
+
+                // MiniMax Image Generation service
+                services.AddSingleton<IImageService>(sp =>
+                {
+                    var logger = sp.GetRequiredService<ILogger<ImageService>>();
+                    var config = sp.GetRequiredService<Configuration>();
+                    return new ImageService(logger, config);
+                });
             })
             .ConfigureLogging(logging =>
             {

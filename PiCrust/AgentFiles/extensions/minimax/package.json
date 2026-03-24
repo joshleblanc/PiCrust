@@ -1,0 +1,9 @@
+{
+  "name": "pi-minimax",
+  "version": "1.0.0",
+  "description": "MiniMax AI extension for pi - provides web search and image understanding tools",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

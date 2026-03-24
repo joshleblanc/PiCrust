@@ -242,6 +242,18 @@ public class DiscordService : BackgroundService
             return;
         }
 
+        if (customType == "minimax_image")
+        {
+            await ProcessMinimaxImageMessageAsync(message);
+            return;
+        }
+
+        if (customType == "minimax_audio")
+        {
+            await ProcessMinimaxAudioMessageAsync(message);
+            return;
+        }
+
         var content = message["content"]?.AsArray();
         var text = content?.FirstOrDefault(c => c?["type"]?.GetValue<string>() == "text");
         if (text == null)
@@ -350,6 +362,316 @@ public class DiscordService : BackgroundService
         {
             _logger.LogError(ex, "Failed to process Discord reaction message");
         }
+    }
+
+    private async Task ProcessMinimaxImageMessageAsync(JsonNode message)
+    {
+        var tempFiles = new List<string>();
+        try
+        {
+            var content = message["content"]?.GetValue<string>();
+            if (string.IsNullOrEmpty(content))
+            {
+                _logger.LogDebug("Minimax image message has no content");
+                return;
+            }
+
+            var imageData = JsonNode.Parse(content);
+            if (imageData == null)
+            {
+                _logger.LogDebug("Failed to parse Minimax image data");
+                return;
+            }
+
+            var imageUrls = imageData["imageUrls"]?.AsArray()?.Select(n => n?.GetValue<string>()).Where(s => !string.IsNullOrEmpty(s)).ToList() ?? new List<string?>();
+            var imageBase64List = imageData["imageBase64"]?.AsArray()?.Select(n => n?.GetValue<string>()).Where(s => !string.IsNullOrEmpty(s)).ToList() ?? new List<string?>();
+            var isVariation = imageData["isVariation"]?.GetValue<bool>() ?? false;
+            var prompt = imageData["prompt"]?.GetValue<string>();
+
+            if (_lastChannel == null)
+            {
+                _logger.LogDebug("No channel available for Minimax image");
+                return;
+            }
+
+            // Build description for the message
+            var description = isVariation ? "Image variation generated" : "Generated image";
+            var imageCount = (imageUrls.Count > 0 ? imageUrls.Count : imageBase64List.Count);
+            if (imageCount > 1)
+            {
+                description += $" ({imageCount} images)";
+            }
+
+            var httpClient = new HttpClient();
+
+            // Process URLs
+            if (imageUrls.Count > 0)
+            {
+                var filesToSend = new List<(string FilePath, string Extension)>();
+
+                foreach (var imageUrl in imageUrls)
+                {
+                    if (string.IsNullOrEmpty(imageUrl)) continue;
+
+                    try
+                    {
+                        // Download the image
+                        var imageBytes = await httpClient.GetByteArrayAsync(imageUrl!);
+
+                        // Determine extension from content type or URL
+                        var extension = GetImageExtensionFromUrl(imageUrl!);
+                        var tempPath = Path.Combine(Path.GetTempPath(), $"minimax_image_{Guid.NewGuid()}{extension}");
+                        
+                        await File.WriteAllBytesAsync(tempPath, imageBytes);
+                        tempFiles.Add(tempPath);
+                        filesToSend.Add((tempPath, extension));
+
+                        _logger.LogDebug("Downloaded image from {Url} to {Path}", imageUrl, tempPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to download image from {Url}", imageUrl);
+                    }
+                }
+
+                // Send files as attachments
+                if (filesToSend.Count > 0)
+                {
+                    // Send first file with description
+                    var firstFile = filesToSend[0];
+                    using var stream1 = File.OpenRead(firstFile.FilePath);
+                    var firstFileName = $"generated_image{firstFile.Extension}";
+                    await _lastChannel.SendFileAsync(stream1, firstFileName, description);
+                    _logger.LogInformation("Sent Minimax image as file attachment: {Url}", imageUrls[0]);
+
+                    // Send remaining files without description
+                    for (int i = 1; i < filesToSend.Count; i++)
+                    {
+                        var file = filesToSend[i];
+                        using var stream = File.OpenRead(file.FilePath);
+                        await _lastChannel.SendFileAsync(stream, $"generated_image_{i + 1}{file.Extension}");
+                        _logger.LogDebug("Sent additional image as file attachment");
+                    }
+                }
+                else
+                {
+                    // Fallback: send URL message if all downloads failed
+                    await _lastChannel.SendMessageAsync($"{description}\n\nFailed to download images. Here are the URLs:\n{string.Join("\n", imageUrls.Where(u => !string.IsNullOrEmpty(u)))}");
+                }
+            }
+            // Process base64 images
+            else if (imageBase64List.Count > 0)
+            {
+                foreach (var (base64Data, index) in imageBase64List.Select((b, i) => (b, i)))
+                {
+                    if (string.IsNullOrEmpty(base64Data)) continue;
+
+                    try
+                    {
+                        // Determine format from base64 prefix
+                        var (imageBytes, extension) = DecodeBase64Image(base64Data!);
+                        var tempPath = Path.Combine(Path.GetTempPath(), $"minimax_image_{Guid.NewGuid()}{extension}");
+                        
+                        await File.WriteAllBytesAsync(tempPath, imageBytes);
+                        tempFiles.Add(tempPath);
+
+                        using var stream = File.OpenRead(tempPath);
+                        var fileName = imageBase64List.Count > 1 ? $"generated_image_{index + 1}{extension}" : $"generated_image{extension}";
+                        await _lastChannel.SendFileAsync(stream, fileName, index == 0 ? description : null);
+                        
+                        _logger.LogInformation("Sent Minimax image (base64) as file attachment");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to process base64 image");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process Minimax image message");
+        }
+        finally
+        {
+            // Clean up temp files
+            foreach (var tempFile in tempFiles)
+            {
+                try
+                {
+                    if (File.Exists(tempFile))
+                        File.Delete(tempFile);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete temp file: {Path}", tempFile);
+                }
+            }
+        }
+    }
+
+    private static string GetImageExtensionFromUrl(string url)
+    {
+        // Try to get extension from URL
+        if (url.Contains(".png", StringComparison.OrdinalIgnoreCase)) return ".png";
+        if (url.Contains(".jpg", StringComparison.OrdinalIgnoreCase)) return ".jpg";
+        if (url.Contains(".jpeg", StringComparison.OrdinalIgnoreCase)) return ".jpg";
+        if (url.Contains(".webp", StringComparison.OrdinalIgnoreCase)) return ".webp";
+        if (url.Contains(".gif", StringComparison.OrdinalIgnoreCase)) return ".gif";
+        
+        // Default to png
+        return ".png";
+    }
+
+    private static (byte[] Data, string Extension) DecodeBase64Image(string base64Data)
+    {
+        // Handle data URL format: data:image/png;base64,xxxxx
+        if (base64Data.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var commaIndex = base64Data.IndexOf(',');
+            if (commaIndex > 0)
+            {
+                var header = base64Data[..commaIndex].ToLowerInvariant();
+                var data = base64Data[(commaIndex + 1)..];
+
+                if (header.Contains("png")) return (Convert.FromBase64String(data), ".png");
+                if (header.Contains("jpeg") || header.Contains("jpg")) return (Convert.FromBase64String(data), ".jpg");
+                if (header.Contains("webp")) return (Convert.FromBase64String(data), ".webp");
+                if (header.Contains("gif")) return (Convert.FromBase64String(data), ".gif");
+            }
+        }
+
+        // Plain base64 string - assume png
+        return (Convert.FromBase64String(base64Data), ".png");
+    }
+
+    private async Task ProcessMinimaxAudioMessageAsync(JsonNode message)
+    {
+        var tempFiles = new List<string>();
+        try
+        {
+            var content = message["content"]?.GetValue<string>();
+            if (string.IsNullOrEmpty(content))
+            {
+                _logger.LogDebug("Minimax audio message has no content");
+                return;
+            }
+
+            var audioData = JsonNode.Parse(content);
+            if (audioData == null)
+            {
+                _logger.LogDebug("Failed to parse Minimax audio data");
+                return;
+            }
+
+            var audioUrl = audioData["audioUrl"]?.GetValue<string>();
+            var audioHex = audioData["audioHex"]?.GetValue<string>();
+            var duration = audioData["duration"]?.GetValue<int>();
+            var prompt = audioData["prompt"]?.GetValue<string>();
+
+            if (_lastChannel == null)
+            {
+                _logger.LogDebug("No channel available for Minimax audio");
+                return;
+            }
+
+            var description = "Generated music";
+            if (duration.HasValue)
+            {
+                description += $" ({duration.Value / 1000.0:F1}s)";
+            }
+
+            var httpClient = new HttpClient();
+
+            if (!string.IsNullOrEmpty(audioUrl))
+            {
+                try
+                {
+                    // Download the audio file
+                    var audioBytes = await httpClient.GetByteArrayAsync(audioUrl);
+                    
+                    // Determine extension from URL
+                    var extension = GetAudioExtensionFromUrl(audioUrl);
+                    var tempPath = Path.Combine(Path.GetTempPath(), $"minimax_audio_{Guid.NewGuid()}{extension}");
+                    
+                    await File.WriteAllBytesAsync(tempPath, audioBytes);
+                    tempFiles.Add(tempPath);
+
+                    using var stream = File.OpenRead(tempPath);
+                    var fileName = $"generated_music{extension}";
+                    await _lastChannel.SendFileAsync(stream, fileName, description);
+                    
+                    _logger.LogInformation("Sent Minimax audio as file attachment: {Url}", audioUrl);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to download audio from {Url}", audioUrl);
+                    await _lastChannel.SendMessageAsync($"{description}\n\nFailed to download audio. Here is the URL:\n{audioUrl}");
+                }
+            }
+            else if (!string.IsNullOrEmpty(audioHex))
+            {
+                try
+                {
+                    var audioBytes = StringToByteArray(audioHex);
+                    var tempPath = Path.Combine(Path.GetTempPath(), $"minimax_audio_{Guid.NewGuid()}.mp3");
+                    
+                    await File.WriteAllBytesAsync(tempPath, audioBytes);
+                    tempFiles.Add(tempPath);
+
+                    using var stream = File.OpenRead(tempPath);
+                    await _lastChannel.SendFileAsync(stream, "generated_music.mp3", description);
+                    
+                    _logger.LogInformation("Sent Minimax audio (hex) as file attachment");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to process audio hex data");
+                    await _lastChannel.SendMessageAsync($"{description}\n\nFailed to process audio data.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process Minimax audio message");
+        }
+        finally
+        {
+            // Clean up temp files
+            foreach (var tempFile in tempFiles)
+            {
+                try
+                {
+                    if (File.Exists(tempFile))
+                        File.Delete(tempFile);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete temp file: {Path}", tempFile);
+                }
+            }
+        }
+    }
+
+    private static string GetAudioExtensionFromUrl(string url)
+    {
+        if (url.Contains(".wav", StringComparison.OrdinalIgnoreCase)) return ".wav";
+        if (url.Contains(".mp3", StringComparison.OrdinalIgnoreCase)) return ".mp3";
+        if (url.Contains(".ogg", StringComparison.OrdinalIgnoreCase)) return ".ogg";
+        
+        // Default to mp3
+        return ".mp3";
+    }
+
+    private static byte[] StringToByteArray(string hex)
+    {
+        hex = hex.Replace(" ", "").Replace("-", "");
+        var bytes = new byte[hex.Length / 2];
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
+        }
+        return bytes;
     }
 
     private async Task SendMessageToChannelAsync(ISocketMessageChannel channel, string response)
