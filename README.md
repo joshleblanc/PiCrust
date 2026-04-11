@@ -38,7 +38,7 @@ This project is **inspired by** and builds upon the work of:
 - **Discord Interface**: Send messages to the bot via DM or mentions, receive AI responses
 - **Persistent Memory**: `MEMORY.md` survives container restarts via Docker volumes
 - **Scheduled Heartbeat**: Periodic prompts to keep the assistant active and contextualized
-- **Full pi Capabilities**: Extensions, skills, and prompt templates from the pi ecosystem
+- **Full pi Capabilities**: Extensions, skills (including mmx-cli for MiniMax), and prompt templates from the pi ecosystem
 - **Volume Persistence**: All agent data in `/home/picrust` persists across rebuilds and redeployments
 - **Non-root Container**: Runs as a dedicated `picrust` user for security
 - **Kamal Deployment**: One-command deploy to any server
@@ -183,7 +183,7 @@ Agent configuration files are copied to `/home/picrust/` inside the container. I
 | `AGENTS.md` | Multi-agent configuration |
 | `BOOTSTRAP.md` | Agent bootstrap instructions |
 | `extensions/` | Custom TypeScript extensions |
-| `skills/` | Agent skills (from [Agent Skills](https://agentskills.io)) |
+| `skills/` | Agent skills (from [Agent Skills](https://agentskills.io) & mmx-cli) |
 | `prompts/` | Reusable prompt templates |
 | `sessions/` | Conversation history |
 | `memories/` | Stored memory snapshots |

@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @mariozechner/pi-coding-agent \
+    && npm install -g mmx-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and grant access to /app
