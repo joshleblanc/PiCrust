@@ -24,7 +24,6 @@
   <ItemGroup>
     <Content Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\package-lock.json" />
     <Content Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\package.json" />
-    <Content Include="agentfiles\models.json" />
   </ItemGroup>
 
   <ItemGroup>
