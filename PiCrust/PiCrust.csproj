@@ -22,7 +22,8 @@
     <None Remove="AgentFiles\**" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="AgentFiles\extensions\minimax\package.json" />
+    <Content Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\package-lock.json" />
+    <Content Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\package.json" />
     <Content Include="agentfiles\models.json" />
   </ItemGroup>
 
@@ -67,11 +68,41 @@
     <None Include="AgentFiles\BOOTSTRAP.md" />
     <None Include="AgentFiles\extensions\auto-memory.ts" />
     <None Include="AgentFiles\extensions\discord-reactions.ts" />
-    <None Include="AgentFiles\extensions\minimax\index.ts" />
     <None Include="AgentFiles\extensions\package-manager.ts" />
     <None Include="agentfiles\extensions\picrust.ts" />
     <None Include="AgentFiles\extensions\reload-runtime.ts" />
     <None Include="AgentFiles\extensions\skill-installer.ts" />
+    <None Include="AgentFiles\git\.gitignore" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\config" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\description" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\HEAD" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\applypatch-msg.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\commit-msg.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\fsmonitor-watchman.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\post-update.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-applypatch.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-commit.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-merge-commit.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-push.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-rebase.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\pre-receive.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\prepare-commit-msg.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\push-to-checkout.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\sendemail-validate.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\hooks\update.sample" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\index" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\info\exclude" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\logs\HEAD" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\logs\refs\heads\master" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\logs\refs\remotes\origin\HEAD" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\objects\pack\pack-48371c90f5b6d167ac984af036887d089471b5a4.idx" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\objects\pack\pack-48371c90f5b6d167ac984af036887d089471b5a4.pack" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\objects\pack\pack-48371c90f5b6d167ac984af036887d089471b5a4.rev" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\packed-refs" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\refs\heads\master" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\refs\remotes\origin\HEAD" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\index.ts" />
+    <None Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\url-browser.md" />
     <None Include="AgentFiles\HEARTBEAT.md" />
     <None Include="AgentFiles\IDENTITY.md" />
     <None Include="agentfiles\memories\.keep" />
@@ -80,14 +111,17 @@
     <None Include="AgentFiles\README.md" />
     <None Include="agentfiles\sessions\.keep" />
     <None Include="agentfiles\skills\.keep" />
+    <None Include="AgentFiles\skills\mmx-cli\SKILL.md" />
     <None Include="AgentFiles\SOUL.md" />
     <None Include="AgentFiles\TOOLS.md" />
     <None Include="AgentFiles\USER.md" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\branches\" />
+    <Folder Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\objects\info\" />
+    <Folder Include="AgentFiles\git\github.com\joshleblanc\pi-url-browser\.git\refs\tags\" />
     <Folder Include="AgentFiles\memories\" />
     <Folder Include="AgentFiles\prompts\" />
     <Folder Include="AgentFiles\sessions\" />
-    <Folder Include="AgentFiles\skills\" />
   </ItemGroup>
 </Project>
